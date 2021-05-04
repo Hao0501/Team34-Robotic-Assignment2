@@ -29,7 +29,7 @@ class SearchActionServer(object):
         self.scan_subscriber = rospy.Subscriber("/scan",
             LaserScan, self.scan_callback)
 
-        self.min_distance = 0
+        self.min_distance = 0.5
         self.object_angle = 0
         self.robot_controller = MoveTB3()
         self.robot_odom = TB3Odometry()
@@ -139,18 +139,19 @@ class SearchActionServer(object):
             # check if there has been a request to cancel the action mid-way through:
             if self.actionserver.is_preempt_requested():
                 rospy.loginfo("Cancelling the search.")
+                
                 self.actionserver.set_preempted()
                 # stop the robot:
                 self.robot_controller.stop()
                 success = False
                 # exit the loop:
                 break
-            
-            #calculate distance from origin/start position
-            self.distance = sqrt(pow(self.posx0 - self.robot_odom.posx, 2) + pow(self.posy0 - self.robot_odom.posy, 2))
-            # populate the feedback message and publish it:
-            self.feedback.current_distance_travelled = self.distance
-            self.actionserver.publish_feedback(self.feedback)
+            else:
+                #calculate distance from origin/start position
+                self.distance = sqrt(pow(self.posx0 - self.robot_odom.posx, 2) + pow(self.posy0 - self.robot_odom.posy, 2))
+                # populate the feedback message and publish it:
+                self.feedback.current_distance_travelled = self.distance
+                self.actionserver.publish_feedback(self.feedback)
             
 
         #if robot has gone too close to a wall, action is complete
