@@ -29,6 +29,8 @@ class SearchActionServer(object):
         self.scan_subscriber = rospy.Subscriber("/scan",
             LaserScan, self.scan_callback)
 
+        self.min_distance = 0
+        self.object_angle = 0
         self.robot_controller = MoveTB3()
         self.robot_odom = TB3Odometry()
         self.arc_angles = np.arange(-40, 41)
