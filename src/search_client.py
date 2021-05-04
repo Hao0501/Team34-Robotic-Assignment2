@@ -21,7 +21,7 @@ class action_client(object):
         
         rospy.init_node("search_action_client")
 
-        self.rate = rospy.Rate(1)
+        self.rate = rospy.Rate(2)
 
         self.goal = SearchGoal()
 
@@ -49,16 +49,10 @@ class action_client(object):
         self.client.send_goal(self.goal, feedback_cb=self.feedback_callback)
 
     def main(self):
-        self.send_goal(velocity = 0.08, approach = 0.25)
+        self.send_goal(velocity = 0.26, approach = 0.19)
         prempt = False
         while self.client.get_state() < 2:
             print("FEEDBACK: Currently travelled {:.3f} m, STATE: Current state code is {}".format(self.distance, self.client.get_state()))
-            #if self.distance >= 2:
-            #    rospy.logwarn("Cancelling goal now...")
-            #    self.client.cancel_goal()
-            #    rospy.logwarn("Goal Cancelled")
-            #    prempt = True
-            #    break
 
             self.rate.sleep()
         
