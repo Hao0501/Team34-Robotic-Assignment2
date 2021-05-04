@@ -30,11 +30,11 @@ class SearchActionServer(object):
 
         self.robot_controller = MoveTB3()
         self.robot_odom = TB3Odometry()
-        self.arc_angles = np.arange(-50, 51)
+        self.arc_angles = np.arange(-40, 41)
     
     def scan_callback(self, scan_data):
-        left_arc = scan_data.ranges[0:51]
-        right_arc = scan_data.ranges[-50:]
+        left_arc = scan_data.ranges[0:41]
+        right_arc = scan_data.ranges[-40:]
         front_arc = np.array(left_arc[::-1] + right_arc[::-1])
         self.min_distance = front_arc.min()
         self.object_angle = self.arc_angles[np.argmin(front_arc)]
