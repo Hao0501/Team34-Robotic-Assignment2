@@ -43,8 +43,9 @@ class BeaconDetectionServer(object):
         self.robot_controller = MoveTB3()
 
         self.turn_vel_fast = 0.5
+        self.turn_vel_fast_rev = -0.5
         self.turn_vel_med = 0.25
-        self.turn_vel_slow = 0.1
+        self.turn_vel_slow = -0.1
 
         self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)
 
@@ -52,6 +53,7 @@ class BeaconDetectionServer(object):
         
         self.task_stage = 1
         self.found_colour = False
+        self.need_reverse = False
 
         self.start_angle= self.robot_odom.yaw
         #convert angle to 0-360
@@ -207,7 +209,7 @@ class BeaconDetectionServer(object):
                     self.robot_controller.publish()
                     for colour in self.colour_boundaries:
                         if (self.centre_pixel_colours > colour[0]) and (self.centre_pixel_colours < colour[1]):
-                            print("Start area colour is: " + colour[2])
+                            print("SEARCH INITIATED: The target colour is: " + colour[2])
                             self.search_colour = colour[2]
                             self.found_colour=True
                 elif (angle_difference<10 or angle_difference>350) and self.found_colour == True:
@@ -223,15 +225,27 @@ class BeaconDetectionServer(object):
                     print("turning back to face forward")
                 else:
                     print("finished turning")
-                    #self.task_stage = 2
 
 
             #explore the arena
             if self.task_stage == 2:
                 #exploration/obstacle avoidance code here
+                self.robot_controller.set_move_cmd(0.22, 0.0)
+                self.robot_controller.publish()
                 print("exploring")
+                if sqrt(pow(self.posx0 - self.robot_odom.posx, 2) + pow(self.posy0 - self.robot_odom.posy, 2)) >= 1.0:
+                    #if the robot has reach the centre, stops and starts scanning target colour
+                    self.robot_controller.set_move_cmd(0.0, 0.0)
+                    self.robot_controller.publish()
+                    self.task_stage = 3
+                else:
+                    # if not, then keep on moving forward at 0.22 m/s until it reached:
+                    self.robot_controller.set_move_cmd(0.22, 0.0)
+                    self.robot_controller.publish()
+                    print("exploring")
             #try to find colour, and turn to face it if dound
             if self.task_stage == 3:
+                print(angle_difference)
                 if self.m00 > self.m00_min:
                     # blob detected
                     if self.cy >= 560-100 and self.cy <= 560+100:
@@ -241,18 +255,33 @@ class BeaconDetectionServer(object):
                         self.move_rate = 'slow'
                 else:
                     self.move_rate = 'fast'
-                    
-                if self.move_rate == 'fast':
+                #scaning one side to see if can get the target colour pillar    
+                if self.move_rate == 'fast' and self.need_reverse == False:
                     print("MOVING FAST: I can't see anything at the moment, scanning the area...")
-                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)
+                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)      
+                    if angle_difference > 100:
+                        self.need_reverse = True
+                #if there aren't target pillars on that side, scan another side                                        
+                elif self.move_rate == 'fast' and self.need_reverse == True:
+                    print("MOVING FAST: I can't see anything at the moment, scanning the another side...")
+                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast_rev)
+                
                 elif self.move_rate == 'slow':
                     print("MOVING SLOW: A blob of colour " + self.search_colour + " of size {:.0f} pixels is in view at y-position: {:.0f} pixels.".format(self.m00, self.cy))
                     self.robot_controller.set_move_cmd(0.0, self.turn_vel_slow)
                 elif self.move_rate == 'stop':
-                    print("STOPPED: The blob of colour is now dead-ahead at y-position {:.0f} pixels".format(self.cy))
-                    self.robot_controller.stop
+                    print("SEARCH COMPLETE: The robot is now facing the target pillar.")
+                    success == True
                     self.robot_controller.set_move_cmd(0.0, 0.0)
-                    print(self.robot_odom.yaw)
+                    self.robot_controller.stop
+                elif self.actionserver.is_preempt_requested():
+                    rospy.loginfo("Cancelling the beacon search.")               
+                    self.actionserver.set_preempted()
+                    # stop the robot:
+                    self.robot_controller.stop()
+                    success = False
+                    # exit the loop:
+                    break
                 else:
                     print("MOVING SLOW: A blob of colour of size {:.0f} pixels is in view at y-position: {:.0f} pixels.".format(self.m00, self.cy))
                     self.robot_controller.set_move_cmd(0.0, self.turn_vel_slow)
