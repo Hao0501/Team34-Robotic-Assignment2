@@ -47,7 +47,7 @@ class BeaconDetectionServer(object):
         self.turn_vel_med = 0.25
         self.turn_vel_slow = -0.1
 
-        self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)
+        self.robot_controller.set_move_cmd(0.0, 0.0)
 
         self.move_rate = '' # fast, slow or stop
         
@@ -66,6 +66,8 @@ class BeaconDetectionServer(object):
         self.min_distance = 0.5
         self.object_angle = 0
         self.arc_angles = np.arange(-40, 41)
+
+        
 
         self.ctrl_c = False
         rospy.on_shutdown(self.shutdown_ops)
@@ -104,6 +106,7 @@ class BeaconDetectionServer(object):
         self.m00_min = 10000
 
         self.search_colour = "blue"
+        self.colour_search_failed = False
 
     def shutdown_ops(self):
         self.robot_controller.stop()
@@ -179,20 +182,27 @@ class BeaconDetectionServer(object):
 
         print("Request to move at {:.3f}m/s and stop if less than{:.2f}m infront of an obstacle".format(goal.fwd_velocity, goal.approach_distance))
 
-        # Get the current robot odometry:   
+        # Get the start robot odometry:   
         self.posx0 = self.robot_odom.posx
         self.posy0 = self.robot_odom.posy
-
+        self.start_posx = self.robot_odom.posx
+        self.start_posy = self.robot_odom.posy
+        self.distance = 0
+        self.explore_distance = 0
+        self.turning_direction = -1
+        
 
         while not self.ctrl_c:
-            #convert angle to 0-360
+            #convert robot angle to 0-360
             self.current_angle = self.robot_odom.yaw 
             if self.current_angle<0:
                 self.current_angle += 360
+            #get angle difference to a reference start angle (given in 0-360)
             self.angle_difference = self.current_angle - self.start_angle
             if self.angle_difference<0:
                 self.angle_difference+=360
-            #get starting area colour
+            
+            #---get starting area colour---
             if self.task_stage == 1:
                 print("turning around")
                 #turn to the right and check centre pixel against colour ranges
@@ -227,25 +237,53 @@ class BeaconDetectionServer(object):
                 else:
                     print("finished turning")
 
-
-            #explore the arena
+            #---explore the arena---
             if self.task_stage == 2:
                 #exploration/obstacle avoidance code here
-                self.robot_controller.set_move_cmd(0.22, 0.0)
-                self.robot_controller.publish()
-                print("exploring")
-                if self.distance >= 0.8:
-                    #if the robot has reach the centre, stops and starts scanning target colour
-                    self.robot_controller.set_move_cmd(0.0, 0.0)
-                    self.robot_controller.publish()
-                    self.task_stage = 3
-                    self.start_angle = self.current_angle
+                
+                #---object avoidance---
+                
+                #if not turning fast enough and about to hit a wall
+                if self.min_distance <= 0.4:
+                    #stop moving and keep turning until the coast is clear
+                    self.robot_controller.set_move_cmd(0, self.turning_direction * 1.2)
+
+                #if approaching an obstacle
+                elif self.min_distance <= 0.55:
+
+                    #if the object is on the left or is directly in front
+                    if self.object_angle<=0:
+                        #update current turning direction
+                        self.turning_direction = -1
+                        #turn left at speed inversely proportional to proximity to obstacle
+                        self.robot_controller.set_move_cmd(goal.fwd_velocity, -0.3*(1/self.min_distance))
+                    
+                    #if the object is on the right
+                    else:
+                        #update turning direction
+                        self.turning_direction = 1
+                        #turn right at speed inversely proportional to proximity to obstacle
+                        self.robot_controller.set_move_cmd(goal.fwd_velocity, 0.3*(1/self.min_distance))
+
                 else:
-                    # if not, then keep on moving forward at 0.22 m/s until it reached:
-                    self.robot_controller.set_move_cmd(0.22, 0.0)
-                    self.robot_controller.publish()
+                    #otherwise, no objects in the way, so set speed to normal forward velocity
+                    self.robot_controller.set_move_cmd(goal.fwd_velocity, 0.0)
+                    
+                    #---scan every 1 m traveled, but only scan when in a safe position---
+                    if self.explore_distance >= 1:
+                        print(self.explore_distance)
+                        self.robot_controller.set_move_cmd(0.0, 0.0)
+                        self.robot_controller.publish()
+                        self.explore_distance = 0
+                        self.start_posx = self.robot_odom.posx
+                        self.start_posy = self.robot_odom.posy
+                        self.task_stage = 3
+                        self.colour_search_failed = False
+                        self.start_angle = self.current_angle
+                        self.angle_difference = 0
+
             
-            #try to find colour, and turn to face it if found
+            #---look for goal beacon---
             if self.task_stage == 3:
                 print("looking for goal pillar")
                 if self.m00 > self.m00_min:
@@ -257,17 +295,23 @@ class BeaconDetectionServer(object):
                         self.move_rate = 'slow'
                 else:
                     self.move_rate = 'fast'
+                
                 #scaning one side to see if can get the target colour pillar    
                 if self.move_rate == 'fast' and self.need_reverse == False:
                     print("MOVING FAST: I can't see anything at the moment, scanning the area...")
-                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)      
+                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)  
+                    #if turned further than 90 with nothing found  
                     if self.angle_difference > 100:
                         self.need_reverse = True
-                #if there aren't target pillars on that side, scan another side                                        
-                elif self.move_rate == 'fast' and self.need_reverse == True:
+                
+                #if the target pillar isn't on that side, scan another side                              
+                elif self.move_rate == 'fast' and self.need_reverse == True and self.colour_search_failed == False:
                     print("MOVING FAST: I can't see anything at the moment, scanning the another side...")
                     self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast_rev)
-                
+                    #if turned further than 90 in the opposite direction with nothing found
+                    if self.angle_difference < 260 and self.angle_difference > 200:
+                        self.colour_search_failed = True
+                        self.robot_controller.set_move_cmd(0.0, 0.0)
                 elif self.move_rate == 'slow':
                     print("MOVING SLOW: A blob of colour " + self.search_colour + " of size {:.0f} pixels is in view at y-position: {:.0f} pixels.".format(self.m00, self.cy))
                     self.robot_controller.set_move_cmd(0.0, self.turn_vel_slow)
@@ -280,7 +324,17 @@ class BeaconDetectionServer(object):
                 else:
                     print("MOVING SLOW: A blob of colour of size {:.0f} pixels is in view at y-position: {:.0f} pixels.".format(self.m00, self.cy))
                     self.robot_controller.set_move_cmd(0.0, self.turn_vel_slow)
-            #approach the beacon
+                
+                #if colour search has failed, return to staring angle
+                if self.colour_search_failed == True:
+                    self.robot_controller.set_move_cmd(0.0, self.turn_vel_fast)
+                    if self.angle_difference > 0:
+                        self.task_stage = 2
+                        self.robot_controller.set_move_cmd(0.0, 0.0)
+
+                
+            
+            #---approach goal beacon---
             if self.task_stage == 4:
                 print("approaching beacon")
                 if self.min_distance < 0.4:
@@ -289,7 +343,7 @@ class BeaconDetectionServer(object):
                     self.robot_controller.stop
                     break
                 else:
-                    self.robot_controller.set_move_cmd(goal.fwd_velocity)
+                    self.robot_controller.set_move_cmd(goal.fwd_velocity,0.0)
             self.robot_controller.publish()
 
             # check if there has been a request to cancel the action mid-way through:
@@ -305,6 +359,7 @@ class BeaconDetectionServer(object):
             else:
                 #calculate distance from origin/start position
                 self.distance = sqrt(pow(self.posx0 - self.robot_odom.posx, 2) + pow(self.posy0 - self.robot_odom.posy, 2))
+                self.explore_distance = sqrt(pow(self.start_posx - self.robot_odom.posx, 2) + pow(self.start_posy - self.robot_odom.posy, 2))
                 # populate the feedback message and publish it:
                 self.feedback.current_distance_travelled = self.distance
                 self.actionserver.publish_feedback(self.feedback)

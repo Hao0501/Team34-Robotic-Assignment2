@@ -1,0 +1,6 @@
+<launch>
+    <node name="beacon_detection_action_server" pkg="team34" type="beacon_detection_server.py" output="screen">
+    </node>
+    <node name="beacon_detection_action_client" pkg="team34" type="beacon_detection_client.py" output="screen">
+    </node>
+</launch>
