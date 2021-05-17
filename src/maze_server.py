@@ -16,12 +16,12 @@ from tb3_odometry import TB3Odometry
 from math import sqrt, pow, radians
 import numpy as np
 
-class SearchActionServer(object):
+class MazeServer(object):
     feedback = SearchFeedback() 
     result = SearchResult()
 
     def __init__(self):
-        self.actionserver = actionlib.SimpleActionServer("/search_action_server", 
+        self.actionserver = actionlib.SimpleActionServer("/maze_server", 
             SearchAction, self.action_server_launcher, auto_start=False)
         self.actionserver.start()
 
@@ -149,6 +149,6 @@ class SearchActionServer(object):
             self.robot_controller.stop()
             
 if __name__ == '__main__':
-    rospy.init_node("search_action_server")
+    rospy.init_node("maze_server")
     SearchActionServer()
     rospy.spin()
