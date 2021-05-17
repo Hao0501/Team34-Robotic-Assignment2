@@ -16,12 +16,12 @@ from tb3_odometry import TB3Odometry
 from math import sqrt, pow, radians
 import numpy as np
 
-class MazeServer(object):
+class SearchActionServer(object):
     feedback = SearchFeedback() 
     result = SearchResult()
 
     def __init__(self):
-        self.actionserver = actionlib.SimpleActionServer("/maze_server", 
+        self.actionserver = actionlib.SimpleActionServer("/search_action_server", 
             SearchAction, self.action_server_launcher, auto_start=False)
         self.actionserver.start()
 
@@ -92,10 +92,10 @@ class MazeServer(object):
             #if not turning fast enough and about to hit a wall
             if self.min_distance <= 0.39:
                 #stop moving and keep turning until the coast is clear
-                self.robot_controller.set_move_cmd(0, self.turning_direction * 2.1)
+                self.robot_controller.set_move_cmd(0, self.turning_direction * 2.2)
 
             #if approaching an obstacle
-            elif self.min_distance <= 0.60:
+            elif self.min_distance <= 0.62:
 
                 #if the object is on the left or is directly in front
                 if self.object_angle<=0:
@@ -149,6 +149,6 @@ class MazeServer(object):
             self.robot_controller.stop()
             
 if __name__ == '__main__':
-    rospy.init_node("maze_server")
+    rospy.init_node("search_action_server")
     SearchActionServer()
     rospy.spin()
